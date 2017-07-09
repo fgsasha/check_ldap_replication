@@ -1,0 +1,71 @@
+#!/usr/local/bin/bash
+
+server_hostnames=(
+	'dsa1.example.com'
+	'dsa1.example.com'
+)
+
+bind_dn='uid=jdoe,ou=people,ou=accounts,dc=example,dc=com'
+
+base_dns=(
+	'dc=example,dc=com'
+	'cn=accesslog'
+)
+
+config_base_dn='cn=config'
+server_id_attr='olcserverid'
+context_csn_attr='contextcsn'
+
+password_file=$(mktemp ~/XXXXXXXXXXXXXXXX)
+
+read -sp 'ldap password: ' bind_password
+
+echo -n "${bind_password}" > "${password_file}"
+
+echo 'getting server ids...'
+for server_hostname in "${server_hostnames[@]}"
+	do
+	server_id=$(
+		ldapsearch -ZZxLLLH "ldap://${server_hostname}/" \
+			-D "${bind_dn}" \
+			-y "${password_file}" \
+			-b "${config_base_dn}" \
+			-s base "${server_id_attr}" | \
+		grep -i "^${server_id_attr}:" | \
+		awk '{ print $2 }'
+	)
+
+	server_id=$(printf %03d "${server_id}")
+	#echo "${server_hostname} : ${server_id}"
+	printf '%-20s : %s\n' "${server_hostname}" "${server_id}"
+
+	server_ids+=("${server_id}")
+done
+
+echo ''
+for server_id in "${server_ids[@]}"
+	do
+	echo "getting ${context_csn_attr} values for server id ${server_id} [${server_hostname}]..."
+	for server_hostname in "${server_hostnames[@]}"
+		do
+		for base_dn in "${base_dns[@]}"
+			do
+			contextcsn=$(
+				ldapsearch -ZZxLLLH "ldap://${server_hostname}/" \
+					-D "${bind_dn}" \
+					-y "${password_file}" \
+					-b "${base_dn}" \
+					-s base "${context_csn_attr}" | \
+				grep -i "^${context_csn_attr}:" | \
+				grep -iF "#${server_id}#" | \
+				awk '{ print $2 }'
+				)
+
+			#echo "${contextcsn} [${server_hostname} - ${base_dn}]"
+			printf '%-40s [%-20s - %-14s]\n' "${contextcsn}" "${server_hostname}" "${base_dn}"
+		done
+	done
+	echo ''
+done
+
+rm -f "${password_file}"
