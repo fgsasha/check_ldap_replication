@@ -69,3 +69,4 @@ for server_id in "${server_ids[@]}"
 done
 
 rm -f "${password_file}"
+exit 0
